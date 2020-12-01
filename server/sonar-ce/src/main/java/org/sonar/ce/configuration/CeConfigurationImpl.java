@@ -31,6 +31,7 @@ import static org.sonar.process.ProcessProperties.Property.CE_GRACEFUL_STOP_TIME
  * Immutable implementation of {@link CeConfiguration} initialized at startup from {@link Configuration}.
  */
 public class CeConfigurationImpl implements CeConfiguration {
+  private static final String CE_WORKERS_COUNT_PROPERTY = "sonar.ce.workerCount";
   private static final int DEFAULT_WORKER_THREAD_COUNT = 1;
   private static final int MAX_WORKER_THREAD_COUNT = 10;
   private static final int DEFAULT_WORKER_COUNT = 1;
@@ -52,15 +53,33 @@ public class CeConfigurationImpl implements CeConfiguration {
   }
 
   public CeConfigurationImpl(Configuration configuration, @Nullable WorkerCountProvider workerCountProvider) {
+    String workerCountAsStr = configuration.get(CE_WORKERS_COUNT_PROPERTY).orElse(null);
     this.workerCountProvider = workerCountProvider;
     this.gracefulStopTimeoutInMs = configuration.getLong(CE_GRACEFUL_STOP_TIMEOUT.getKey())
       .orElse(Long.parseLong(CE_GRACEFUL_STOP_TIMEOUT.getDefaultValue()));
     if (workerCountProvider == null) {
       this.workerCount = DEFAULT_WORKER_COUNT;
-      this.workerThreadCount = DEFAULT_WORKER_THREAD_COUNT;
+      if (workerCountAsStr != null) {
+        this.workerCount = parseStringValue(workerCountAsStr);
+      }
+      this.workerThreadCount = MAX_WORKER_THREAD_COUNT;
     } else {
       this.workerCount = readWorkerCount(workerCountProvider);
       this.workerThreadCount = MAX_WORKER_THREAD_COUNT;
+    }
+  }
+
+  private static int parseStringValue(String workerCountAsStr) {
+    try {
+      int value = Integer.parseInt(workerCountAsStr);
+      if (value < DEFAULT_WORKER_COUNT || value > MAX_WORKER_THREAD_COUNT) {
+        throw parsingError(value);
+      }
+      return value;
+    } catch (NumberFormatException e) {
+      throw MessageException.of(format(
+              "Worker count '%s' is invalid. It must be an integer strictly greater than 0 and less or equal to 10",
+              workerCountAsStr));
     }
   }
 
